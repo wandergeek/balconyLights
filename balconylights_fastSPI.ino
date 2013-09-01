@@ -21,9 +21,8 @@
 CRGB leds[NUM_LEDS];
 
 byte in;
-CRGB orange = CRGB(0, 21, 255);
+CRGB orange = CRGB(0, 21, 255);  //b,g,r
 CRGB yellow = CRGB(0,255,242);
-//tracers
 CRGB traceBGColor = CRGB::Black;
 CRGB traceColor = CRGB::Yellow;
 int numTracerPx = 15;
@@ -34,6 +33,20 @@ CRGB notificationColor = CRGB(0,0,255);
 
 const int DATAPIN = 3;
 const int CLOCKPIN = 4;
+int redVal = 0;
+int grnVal = 0;
+int bluVal = 0;
+int wait = 1;      // 10ms internal crossFade delay; increase for slower fades
+int hold = 0;       // Optional hold when a color is complete, before the next crossFade
+int DEBUG = 1;      // DEBUG counter; if set to 1, will write values back via serial
+int loopCount = 60; // How often should DEBUG report?
+int repeat = 3;     // How many times should we loop before stopping? (0 for no stop)
+int j = 0;          // Loop counter for repeat
+
+// Initialize color variables
+int prevR = redVal;
+int prevG = grnVal;
+int prevB = bluVal;
 
 void setup() {
   	// sanity check delay - allows reprogramming if accidently blowing power w/leds
@@ -61,6 +74,10 @@ void setup() {
 
 
 void loop() {   
+  
+  
+  crossFade(CRGB::Red);
+  crossFade(CRGB::Green);
   
     while (Serial.available() > 0) {
 
@@ -96,17 +113,12 @@ void loop() {
 }
 
 void setStripColor(CRGB color) {
-  LEDS.showColor(color);
+  CRGB fixedColor = CRGB(color.b,color.g,color.r); //ordering is fucked, cbf fixing it
+  LEDS.showColor(fixedColor);
   delay(1);
 }
 
 
-void fade(CRGB newColor) {
- 
- 
-  
-  
-}
 
 void tracer() {
   for(int i=0; i<NUM_LEDS-numTracerPx; i++) {
@@ -146,4 +158,86 @@ void notification() {
   
 }
 
+
+//http://www.arduino.cc/en/Tutorial/ColorCrossfader
+
+int calculateStep(int prevValue, int endValue) {
+  int step = endValue - prevValue; // What's the overall gap?
+  if (step) {                      // If its non-zero, 
+    step = 1020/step;              //   divide by 1020
+  } 
+  return step;
+}
+
+/* The next function is calculateVal. When the loop value, i,
+*  reaches the step size appropriate for one of the
+*  colors, it increases or decreases the value of that color by 1. 
+*  (R, G, and B are each calculated separately.)
+*/
+
+int calculateVal(int step, int val, int i) {
+
+  if ((step) && i % step == 0) { // If step is non-zero and its time to change a value,
+    if (step > 0) {              //   increment the value if step is positive...
+      val += 1;           
+    } 
+    else if (step < 0) {         //   ...or decrement it if step is negative
+      val -= 1;
+    } 
+  }
+  // Defensive driving: make sure val stays in the range 0-255
+  if (val > 255) {
+    val = 255;
+  } 
+  else if (val < 0) {
+    val = 0;
+  }
+  return val;
+}
+
+/* crossFade() converts the percentage colors to a 
+*  0-255 range, then loops 1020 times, checking to see if  
+*  the value needs to be updated each time, then writing
+*  the color values to the correct pins.
+*/
+
+void crossFade(CRGB newColor) {
+  // Convert to 0-255
+  int R = newColor.r;
+  int G = newColor.g;
+  int B = newColor.b;
+
+  int stepR = calculateStep(prevR, R);
+  int stepG = calculateStep(prevG, G); 
+  int stepB = calculateStep(prevB, B);
+
+  for (int i = 0; i <= 1020; i++) {
+    redVal = calculateVal(stepR, redVal, i);
+    grnVal = calculateVal(stepG, grnVal, i);
+    bluVal = calculateVal(stepB, bluVal, i);
+    
+    setStripColor(CRGB(redVal,grnVal,bluVal));
+
+//    delay(wait); // Pause for 'wait' milliseconds before resuming the loop
+
+    if (DEBUG) { // If we want serial output, print it at the 
+      if (i == 0 or i % loopCount == 0) { // beginning, and every loopCount times
+        Serial.print("Loop/RGB: #");
+        Serial.print(i);
+        Serial.print(" | ");
+        Serial.print(redVal);
+        Serial.print(" / ");
+        Serial.print(grnVal);
+        Serial.print(" / ");  
+        Serial.println(bluVal); 
+      } 
+      DEBUG += 1;
+    }
+  }
+  // Update current values for next loop
+  prevR = redVal; 
+  prevG = grnVal; 
+  prevB = bluVal;
+  delay(hold); // Pause for optional 'wait' milliseconds before resuming the loop
+}
 
